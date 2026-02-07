@@ -21,7 +21,7 @@ Get your token from: https://poeditor.com/account/api
 docker run -d -p 9142:9142 \
   -e POEDITOR_API_TOKEN=your_token_here \
   --name poeditor-mcp \
-  YOUR_DOCKERHUB_USERNAME/poeditor-mcp-server:latest
+  gabrielepallaoro/poeditor-mcp-server:latest
 
 # Verify it's running
 curl http://localhost:9142/health
@@ -31,7 +31,7 @@ curl http://localhost:9142/health
 
 ```bash
 # Clone this repository first
-git clone https://github.com/YOUR_USERNAME/poeditor-mcp-server.git
+git clone https://github.com/gallaoro/poeditor-mcp-server.git
 cd poeditor-mcp-server
 
 # Build the image

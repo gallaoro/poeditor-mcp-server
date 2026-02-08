@@ -30,6 +30,7 @@ export const addTermsToAProjectTool = {
     input: AddTermsInput,
     client: POEditorClient
   ) {
+    console.log(`[MCP] Adding ${input.terms.length} term(s) to project ${input.project_id}`);
     try {
       // Prepare terms for POEditor API (without translations)
       const termsToAdd: AddTermInput[] = input.terms.map((term: TermInput) => ({
@@ -49,11 +50,13 @@ export const addTermsToAProjectTool = {
       }
       
       const termsAdded = addResponse.result?.terms.added || 0;
+      console.log(`[MCP] Added ${termsAdded} term(s)`);
       const translationsAdded: Record<string, number> = {};
       
       // Now add translations if provided
       for (const term of input.terms) {
         if (term.translations && Object.keys(term.translations).length > 0) {
+          console.log(`[MCP] Adding translations for term: "${term.term}"`);
           for (const [languageCode, translationText] of Object.entries(term.translations)) {
             try {
               const translationData = [{
@@ -72,22 +75,25 @@ export const addTermsToAProjectTool = {
               );
               
               if (translationResponse.response.status === 'success') {
-                translationsAdded[languageCode] = (translationsAdded[languageCode] || 0) + 1;
+                const added = translationResponse.result?.translations?.added || 0;
+                translationsAdded[languageCode] = (translationsAdded[languageCode] || 0) + added;
               }
             } catch (error) {
               // Continue even if translation fails
-              console.error(`Failed to add translation for ${languageCode}:`, error);
+              console.error(`[MCP] Failed to add translation for ${languageCode}:`, error);
             }
           }
         }
       }
       
+      console.log(`[MCP] Translations added:`, translationsAdded);
       return {
         terms_added: termsAdded,
         translations_added: translationsAdded,
         success: true,
       };
     } catch (error) {
+      console.error('[MCP] Failed to add terms:', error);
       throw new Error(`Failed to add terms: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   },

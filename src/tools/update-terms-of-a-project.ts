@@ -11,16 +11,16 @@ const updateTermInputSchema = z.object({
   plural: z.string().optional().describe('New plural form'),
   comment: z.string().optional().describe('New comment'),
   tags: z.union([z.string(), z.array(z.string())]).optional().describe('New tags (replaces existing)'),
-  translations: z.record(z.string()).optional().describe('Update translations keyed by language code'),
-});
+  translations: z.record(z.string()).optional().describe('Update translations as a record keyed by language code. Example: {"it": "Italian translation", "en": "English translation", "de": "German translation"}'),
+}).strict();
 
 type UpdateTermInput = z.infer<typeof updateTermInputSchema>;
 
 const updateTermsInputSchema = z.object({
   project_id: z.number().describe('The project ID'),
   fuzzy_trigger: z.boolean().optional().describe('Mark translations in other languages as fuzzy when term text changes'),
-  terms: z.array(updateTermInputSchema).describe('Array of terms to update'),
-});
+  terms: z.array(updateTermInputSchema).describe('Array of terms to update. Each term must have "term" and "context" fields to identify it, and "translations" as a record object like {"it": "text", "en": "text"}'),
+}).strict();
 
 type UpdateTermsInput = z.infer<typeof updateTermsInputSchema>;
 
@@ -72,6 +72,8 @@ export const updateTermsOfAProjectTool = {
           const termText = term.new_term || term.term;
           const contextText = term.new_context || term.context;
           
+          console.log(`[MCP] Updating translations for term: "${termText}", context: "${contextText}"`);
+          
           for (const [languageCode, translationText] of Object.entries(term.translations)) {
             try {
               const translationData = [{
@@ -82,6 +84,8 @@ export const updateTermsOfAProjectTool = {
                 },
               }];
               
+              console.log(`[MCP] Sending to POEditor for ${languageCode}:`, JSON.stringify(translationData));
+              
               const translationResponse = await client.updateLanguage(
                 input.project_id,
                 languageCode,
@@ -89,12 +93,16 @@ export const updateTermsOfAProjectTool = {
                 input.fuzzy_trigger
               );
               
+              console.log(`[MCP] POEditor response for ${languageCode}:`, JSON.stringify(translationResponse));
+              
               if (translationResponse.response.status === 'success') {
-                translationsUpdated[languageCode] = (translationsUpdated[languageCode] || 0) + 1;
+                const added = translationResponse.result?.translations?.added || 0;
+                const updated = translationResponse.result?.translations?.updated || 0;
+                translationsUpdated[languageCode] = (translationsUpdated[languageCode] || 0) + added + updated;
               }
             } catch (error) {
               // Continue even if translation update fails
-              console.error(`Failed to update translation for ${languageCode}:`, error);
+              console.error(`[MCP] Failed to update translation for ${languageCode}:`, error);
             }
           }
         }

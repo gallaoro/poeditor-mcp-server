@@ -21,6 +21,7 @@ export const exportProjectTool = {
     input: ExportProjectInput,
     client: POEditorClient
   ) {
+    console.log(`[MCP] Exporting project ${input.project_id} in ${input.language_codes.length} language(s): ${input.language_codes.join(', ')}`);
     try {
       // Export each language in parallel
       const exportPromises = input.language_codes.map(async (languageCode: string) => {
@@ -38,19 +39,21 @@ export const exportProjectTool = {
             return {
               language_code: languageCode,
               success: false,
-              error: response.response.message,
-            };
-          }
-          
-          return {
+            error: response.response.message,
+          };
+        }
+        
+        console.log(`[MCP] Export successful for ${languageCode}`);
+        return {
             language_code: languageCode,
             download_url: response.result.url,
             format: input.format,
             success: true,
             expires_in: '10 minutes',
-          };
-        } catch (error) {
-          return {
+        };
+      } catch (error) {
+        console.error(`[MCP] Export exception for ${languageCode}:`, error);
+        return {
             language_code: languageCode,
             success: false,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -62,6 +65,7 @@ export const exportProjectTool = {
       const successful = results.filter(r => r.success);
       const failed = results.filter(r => !r.success);
       
+      console.log(`[MCP] Export completed: ${successful.length}/${results.length} successful`);
       return {
         exports: results,
         summary: {

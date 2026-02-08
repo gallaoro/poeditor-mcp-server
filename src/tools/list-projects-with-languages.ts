@@ -7,6 +7,7 @@ export const listProjectsWithLanguagesTool = {
   inputSchema: z.object({}),
   
   async execute(_input: Record<string, never>, client: POEditorClient) {
+    console.log('[MCP] Fetching projects with languages...');
     try {
       // First, get all projects
       const projectsResponse = await client.listProjects();
@@ -16,6 +17,7 @@ export const listProjectsWithLanguagesTool = {
       }
       
       const projects = projectsResponse.result.projects;
+      console.log(`[MCP] Found ${projects.length} projects, fetching languages...`);
       
       // Then fetch languages for each project in parallel
       const projectsWithLanguages = await Promise.all(
@@ -34,6 +36,7 @@ export const listProjectsWithLanguagesTool = {
               languages: languagesResponse.result?.languages || [],
             };
           } catch (error) {
+            console.error(`[MCP] Failed to fetch languages for project ${project.id}:`, error);
             // If fetching languages fails for a project, return project without languages
             return {
               id: project.id,
@@ -50,11 +53,13 @@ export const listProjectsWithLanguagesTool = {
         })
       );
       
+      console.log(`[MCP] Successfully fetched ${projectsWithLanguages.length} projects with languages`);
       return {
         projects: projectsWithLanguages,
         total: projectsWithLanguages.length,
       };
     } catch (error) {
+      console.error('[MCP] Failed to list projects:', error);
       throw new Error(`Failed to list projects: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   },

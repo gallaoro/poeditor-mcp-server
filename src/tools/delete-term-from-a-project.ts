@@ -18,6 +18,7 @@ export const deleteTermFromAProjectTool = {
     input: DeleteTermInput,
     client: POEditorClient
   ) {
+    console.log(`[MCP] Deleting term "${input.term}" with context "${input.context}" from project ${input.project_id}`);
     try {
       const response = await client.deleteTerms(input.project_id, [{
         term: input.term,
@@ -29,6 +30,7 @@ export const deleteTermFromAProjectTool = {
       }
       
       const deleted = (response.result?.terms.deleted || 0) > 0;
+      console.log(`[MCP] Term deletion ${deleted ? 'successful' : 'failed - term not found'}`);
       
       return {
         deleted,

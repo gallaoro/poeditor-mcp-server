@@ -7,16 +7,20 @@ export const checkConfigurationTool = {
   inputSchema: z.object({}),
   
   async execute(_input: Record<string, never>, client: POEditorClient) {
+    console.log('[MCP] Checking POEditor API configuration...');
     try {
       const response = await client.listProjects();
       
       if (response.response.status === 'success') {
+        const projectCount = response.result?.projects.length || 0;
+        console.log(`[MCP] Configuration check successful: ${projectCount} projects found`);
         return {
           valid: true,
           message: 'POEditor API token is valid and working',
-          projectCount: response.result?.projects.length || 0,
+          projectCount,
         };
       } else {
+        console.error('[MCP] Configuration check failed:', response.response.message);
         return {
           valid: false,
           message: response.response.message,
@@ -24,6 +28,7 @@ export const checkConfigurationTool = {
         };
       }
     } catch (error) {
+      console.error('[MCP] Configuration check error:', error);
       return {
         valid: false,
         message: error instanceof Error ? error.message : 'Unknown error',

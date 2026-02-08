@@ -28,6 +28,7 @@ export const listTermsOfAProjectTool = {
     input: ListTermsInput,
     client: POEditorClient
   ) {
+    console.log(`[MCP] Listing terms for project ${input.project_id}` + (input.language_code ? ` (language: ${input.language_code})` : ''));
     try {
       const response = await client.listTerms(input.project_id, input.language_code);
       
@@ -36,6 +37,7 @@ export const listTermsOfAProjectTool = {
       }
       
       let terms = response.result.terms;
+      const originalCount = terms.length;
       
       // Apply filters
       if (input.tags) {
@@ -43,15 +45,19 @@ export const listTermsOfAProjectTool = {
         terms = terms.filter(term => 
           term.tags.some(tag => tagsArray.includes(tag))
         );
+        console.log(`[MCP] Filtered by tags: ${originalCount} -> ${terms.length} terms`);
       }
       
       if (input.reference_pattern) {
+        const beforeFilter = terms.length;
         terms = terms.filter(term => 
           term.reference.includes(input.reference_pattern!)
         );
+        console.log(`[MCP] Filtered by reference pattern: ${beforeFilter} -> ${terms.length} terms`);
       }
       
       if (input.translation_status && input.language_code) {
+        const beforeFilter = terms.length;
         terms = terms.filter((term: Term) => {
           if (!term.translation) return input.translation_status === 'untranslated';
           
@@ -77,8 +83,10 @@ export const listTermsOfAProjectTool = {
               return true;
           }
         });
+        console.log(`[MCP] Filtered by translation status (${input.translation_status}): ${beforeFilter} -> ${terms.length} terms`);
       }
       
+      console.log(`[MCP] Returning ${terms.length} terms`);
       return {
         terms,
         total: terms.length,

@@ -45,7 +45,7 @@ app.get('/health', (_req, res) => {
 
 // SSE endpoint for MCP
 app.get('/sse', async (_req, res) => {
-  console.log('New SSE connection established');
+  console.log('[MCP] New SSE connection established');
   
   const client = new POEditorClient(apiToken);
   const server = new Server(
@@ -62,6 +62,7 @@ app.get('/sse', async (_req, res) => {
 
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.log('[MCP] Received tools/list request');
     return {
       tools: tools.map(tool => ({
         name: tool.name,
@@ -97,18 +98,25 @@ app.get('/sse', async (_req, res) => {
 
   // Handle tool calls
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    console.log(`[MCP] Tool call received: ${request.params.name}`);
+    console.log(`[MCP] Arguments:`, JSON.stringify(request.params.arguments, null, 2));
+    
     const tool = tools.find(t => t.name === request.params.name);
     
     if (!tool) {
+      console.error(`[MCP] Unknown tool: ${request.params.name}`);
       throw new Error(`Unknown tool: ${request.params.name}`);
     }
 
     try {
       // Validate input
       const validatedInput = tool.inputSchema.parse(request.params.arguments || {});
+      console.log(`[MCP] Validated input:`, JSON.stringify(validatedInput, null, 2));
       
       // Execute tool (use any to avoid type intersection issues)
+      console.log(`[MCP] Executing tool: ${tool.name}`);
       const result = await (tool.execute as any)(validatedInput, client);
+      console.log(`[MCP] Tool execution completed:`, JSON.stringify(result, null, 2));
       
       return {
         content: [
@@ -119,6 +127,7 @@ app.get('/sse', async (_req, res) => {
         ],
       };
     } catch (error) {
+      console.error(`[MCP] Tool execution error:`, error);
       if (error instanceof Error) {
         return {
           content: [
@@ -140,7 +149,7 @@ app.get('/sse', async (_req, res) => {
   // Clean up on disconnect
   transport.onclose = () => {
     transports.delete(transport.sessionId);
-    console.log(`SSE connection closed, session: ${transport.sessionId}`);
+    console.log(`[MCP] SSE connection closed, session: ${transport.sessionId}`);
   };
   
   await server.connect(transport);
@@ -150,11 +159,13 @@ app.get('/sse', async (_req, res) => {
 
 // Message endpoint for MCP
 app.post('/message', async (req, res) => {
-  // Find the transport by session ID from the request
   const sessionId = req.query.sessionId as string;
+  console.log(`[MCP] Message received for session: ${sessionId}`);
+  
   const transport = transports.get(sessionId);
   
   if (!transport) {
+    console.error(`[MCP] Session not found: ${sessionId}`);
     res.status(404).json({ error: 'Session not found' });
     return;
   }

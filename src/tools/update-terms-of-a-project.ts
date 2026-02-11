@@ -11,7 +11,16 @@ const updateTermInputSchema = z.object({
   plural: z.string().optional().describe('New plural form'),
   comment: z.string().optional().describe('New comment'),
   tags: z.union([z.string(), z.array(z.string())]).optional().describe('New tags (replaces existing)'),
-  translations: z.record(z.string()).optional().describe('Update translations as a record keyed by language code. Example: {"it": "Italian translation", "en": "English translation", "de": "German translation"}'),
+  translations: z.record(z.string().min(1, 'Translation cannot be empty'))
+    .refine(
+      (translations) => Object.keys(translations).length > 0,
+      { message: 'At least one translation is required' }
+    )
+    .refine(
+      (translations) => Object.values(translations).every(text => text.trim().length > 0),
+      { message: 'All translations must be non-empty strings' }
+    )
+    .describe('Update translations as a record keyed by language code. Must contain at least one non-empty translation. Example: {"it": "Italian translation", "en": "English translation", "de": "German translation"}'),
 }).strict();
 
 type UpdateTermInput = z.infer<typeof updateTermInputSchema>;
@@ -34,6 +43,20 @@ export const updateTermsOfAProjectTool = {
     client: POEditorClient
   ) {
     try {
+      // Validate that all terms have valid translations before proceeding
+      for (const term of input.terms) {
+        if (!term.translations || Object.keys(term.translations).length === 0) {
+          throw new Error(`Term "${term.term}" (context: "${term.context}") must have at least one translation. Translations are required.`);
+        }
+        
+        // Validate that all translation values are non-empty
+        for (const [languageCode, translationText] of Object.entries(term.translations)) {
+          if (!translationText || translationText.trim().length === 0) {
+            throw new Error(`Term "${term.term}" has an empty translation for language "${languageCode}". All translations must be non-empty strings.`);
+          }
+        }
+      }
+      
       // Prepare terms for POEditor API (without translations)
       const termsToUpdate: POEditorUpdateTermInput[] = input.terms.map((term: UpdateTermInput) => {
         const updateData: POEditorUpdateTermInput = {
@@ -65,45 +88,46 @@ export const updateTermsOfAProjectTool = {
       const termsUpdated = updateResponse.result?.terms.updated || 0;
       const translationsUpdated: Record<string, number> = {};
       
-      // Now update translations if provided
+      // Update translations (we know they exist and are valid from validation above)
       for (const term of input.terms) {
-        if (term.translations && Object.keys(term.translations).length > 0) {
-          // Use new_term if provided, otherwise use original term
-          const termText = term.new_term || term.term;
-          const contextText = term.new_context || term.context;
-          
-          console.log(`[MCP] Updating translations for term: "${termText}", context: "${contextText}"`);
-          
-          for (const [languageCode, translationText] of Object.entries(term.translations)) {
-            try {
-              const translationData = [{
-                term: termText,
-                context: contextText,
-                translation: {
-                  content: translationText as string,
-                },
-              }];
-              
-              console.log(`[MCP] Sending to POEditor for ${languageCode}:`, JSON.stringify(translationData));
-              
-              const translationResponse = await client.updateLanguage(
-                input.project_id,
-                languageCode,
-                translationData,
-                input.fuzzy_trigger
-              );
-              
-              console.log(`[MCP] POEditor response for ${languageCode}:`, JSON.stringify(translationResponse));
-              
-              if (translationResponse.response.status === 'success') {
-                const added = translationResponse.result?.translations?.added || 0;
-                const updated = translationResponse.result?.translations?.updated || 0;
-                translationsUpdated[languageCode] = (translationsUpdated[languageCode] || 0) + added + updated;
-              }
-            } catch (error) {
-              // Continue even if translation update fails
-              console.error(`[MCP] Failed to update translation for ${languageCode}:`, error);
+        // Use new_term if provided, otherwise use original term
+        const termText = term.new_term || term.term;
+        const contextText = term.new_context || term.context;
+        
+        console.log(`[MCP] Updating translations for term: "${termText}", context: "${contextText}"`);
+        
+        for (const [languageCode, translationText] of Object.entries(term.translations!)) {
+          try {
+            const translationData = [{
+              term: termText,
+              context: contextText,
+              translation: {
+                content: translationText as string,
+              },
+            }];
+            
+            console.log(`[MCP] Sending to POEditor for ${languageCode}:`, JSON.stringify(translationData));
+            
+            const translationResponse = await client.updateLanguage(
+              input.project_id,
+              languageCode,
+              translationData,
+              input.fuzzy_trigger
+            );
+            
+            console.log(`[MCP] POEditor response for ${languageCode}:`, JSON.stringify(translationResponse));
+            
+            if (translationResponse.response.status === 'success') {
+              const added = translationResponse.result?.translations?.added || 0;
+              const updated = translationResponse.result?.translations?.updated || 0;
+              translationsUpdated[languageCode] = (translationsUpdated[languageCode] || 0) + added + updated;
+            } else {
+              throw new Error(`Failed to update translation for language "${languageCode}": ${translationResponse.response.message}`);
             }
+          } catch (error) {
+            // Fail if translation update fails - don't continue silently
+            console.error(`[MCP] Failed to update translation for ${languageCode}:`, error);
+            throw new Error(`Failed to update translation for language "${languageCode}": ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
       }

@@ -9,7 +9,16 @@ const termInputSchema = z.object({
   plural: z.string().optional().describe('Plural form of the term'),
   comment: z.string().optional().describe('Developer comment for translators'),
   tags: z.union([z.string(), z.array(z.string())]).optional().describe('Tags for organization'),
-  translations: z.record(z.string()).optional().describe('Initial translations keyed by language code'),
+  translations: z.record(z.string().min(1, 'Translation cannot be empty'))
+    .refine(
+      (translations) => Object.keys(translations).length > 0,
+      { message: 'At least one translation is required' }
+    )
+    .refine(
+      (translations) => Object.values(translations).every(text => text.trim().length > 0),
+      { message: 'All translations must be non-empty strings' }
+    )
+    .describe('Initial translations keyed by language code. Must contain at least one non-empty translation. Example: {"en": "Hello", "it": "Ciao"}'),
 });
 
 type TermInput = z.infer<typeof termInputSchema>;
@@ -23,7 +32,7 @@ type AddTermsInput = z.infer<typeof addTermsInputSchema>;
 
 export const addTermsToAProjectTool = {
   name: 'add_terms_to_a_project',
-  description: 'Add new translation terms to a specific project, optionally with initial translations',
+  description: 'Add new translation terms to a specific project with initial translations. Translations are required and must contain at least one non-empty translation.',
   inputSchema: addTermsInputSchema,
   
   async execute(
@@ -32,6 +41,20 @@ export const addTermsToAProjectTool = {
   ) {
     console.log(`[MCP] Adding ${input.terms.length} term(s) to project ${input.project_id}`);
     try {
+      // Validate that all terms have valid translations before proceeding
+      for (const term of input.terms) {
+        if (!term.translations || Object.keys(term.translations).length === 0) {
+          throw new Error(`Term "${term.term}" must have at least one translation. Translations are required.`);
+        }
+        
+        // Validate that all translation values are non-empty
+        for (const [languageCode, translationText] of Object.entries(term.translations)) {
+          if (!translationText || translationText.trim().length === 0) {
+            throw new Error(`Term "${term.term}" has an empty translation for language "${languageCode}". All translations must be non-empty strings.`);
+          }
+        }
+      }
+      
       // Prepare terms for POEditor API (without translations)
       const termsToAdd: AddTermInput[] = input.terms.map((term: TermInput) => ({
         term: term.term,
@@ -53,35 +76,36 @@ export const addTermsToAProjectTool = {
       console.log(`[MCP] Added ${termsAdded} term(s)`);
       const translationsAdded: Record<string, number> = {};
       
-      // Now add translations if provided
+      // Add translations (we know they exist and are valid from validation above)
       for (const term of input.terms) {
-        if (term.translations && Object.keys(term.translations).length > 0) {
-          console.log(`[MCP] Adding translations for term: "${term.term}"`);
-          for (const [languageCode, translationText] of Object.entries(term.translations)) {
-            try {
-              const translationData = [{
-                term: term.term,
-                context: term.context || '',
-                translation: {
-                  content: translationText as string,
-                  fuzzy: 0,
-                },
-              }];
-              
-              const translationResponse = await client.updateLanguage(
-                input.project_id,
-                languageCode,
-                translationData
-              );
-              
-              if (translationResponse.response.status === 'success') {
-                const added = translationResponse.result?.translations?.added || 0;
-                translationsAdded[languageCode] = (translationsAdded[languageCode] || 0) + added;
-              }
-            } catch (error) {
-              // Continue even if translation fails
-              console.error(`[MCP] Failed to add translation for ${languageCode}:`, error);
+        console.log(`[MCP] Adding translations for term: "${term.term}"`);
+        for (const [languageCode, translationText] of Object.entries(term.translations!)) {
+          try {
+            const translationData = [{
+              term: term.term,
+              context: term.context || '',
+              translation: {
+                content: translationText as string,
+                fuzzy: 0,
+              },
+            }];
+            
+            const translationResponse = await client.updateLanguage(
+              input.project_id,
+              languageCode,
+              translationData
+            );
+            
+            if (translationResponse.response.status === 'success') {
+              const added = translationResponse.result?.translations?.added || 0;
+              translationsAdded[languageCode] = (translationsAdded[languageCode] || 0) + added;
+            } else {
+              throw new Error(`Failed to add translation for language "${languageCode}": ${translationResponse.response.message}`);
             }
+          } catch (error) {
+            // Fail if translation fails - don't continue silently
+            console.error(`[MCP] Failed to add translation for ${languageCode}:`, error);
+            throw new Error(`Failed to add translation for language "${languageCode}": ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
       }

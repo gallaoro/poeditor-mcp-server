@@ -4,6 +4,8 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { POEditorClient } from './client/poeditor.js';
 import { checkConfigurationTool } from './tools/check-configuration.js';
@@ -56,6 +58,7 @@ app.get('/sse', async (_req, res) => {
     {
       capabilities: {
         tools: {},
+        resources: {},
       },
     }
   );
@@ -140,6 +143,103 @@ app.get('/sse', async (_req, res) => {
         };
       }
       throw error;
+    }
+  });
+
+  // List available resources
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    console.log('[MCP] Received resources/list request');
+    try {
+      const projectsResponse = await client.listProjects();
+      
+      if (projectsResponse.response.status !== 'success' || !projectsResponse.result) {
+        throw new Error(projectsResponse.response.message);
+      }
+
+      const resources = projectsResponse.result.projects.map(project => ({
+        uri: `poeditor://project/${project.id}`,
+        name: project.name,
+        description: project.description || `POEditor project: ${project.name}`,
+        mimeType: 'application/json',
+      }));
+
+      console.log(`[MCP] Returning ${resources.length} resources`);
+      return { resources };
+    } catch (error) {
+      console.error('[MCP] Failed to list resources:', error);
+      throw new Error(`Failed to list resources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  // Read a specific resource
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    console.log(`[MCP] Received resources/read request for: ${uri}`);
+    
+    // Parse URI: poeditor://project/{project_id}
+    const projectMatch = uri.match(/^poeditor:\/\/project\/(\d+)$/);
+    
+    if (!projectMatch) {
+      throw new Error(`Invalid resource URI: ${uri}. Expected format: poeditor://project/{project_id}`);
+    }
+
+    const projectId = parseInt(projectMatch[1], 10);
+
+    try {
+      // Fetch project details
+      const projectsResponse = await client.listProjects();
+      
+      if (projectsResponse.response.status !== 'success' || !projectsResponse.result) {
+        throw new Error(projectsResponse.response.message);
+      }
+
+      const project = projectsResponse.result.projects.find(p => p.id === projectId);
+      
+      if (!project) {
+        throw new Error(`Project ${projectId} not found`);
+      }
+
+      // Fetch languages for the project
+      let languages: Array<{ code: string; name: string; percentage: number; updated?: string }> = [];
+      try {
+        const languagesResponse = await client.listLanguages(projectId);
+        if (languagesResponse.response.status === 'success' && languagesResponse.result) {
+          languages = languagesResponse.result.languages;
+        }
+      } catch (error) {
+        console.warn(`[MCP] Failed to fetch languages for project ${projectId}:`, error);
+        // Continue without languages
+      }
+
+      const resourceData = {
+        id: project.id,
+        name: project.name,
+        description: project.description || '',
+        created: project.created,
+        terms: project.terms,
+        reference_language: project.reference_language || '',
+        fallback_language: project.fallback_language || '',
+        languages: languages.map(lang => ({
+          code: lang.code,
+          name: lang.name,
+          percentage: lang.percentage,
+          updated: lang.updated,
+        })),
+      };
+
+      console.log(`[MCP] Returning resource data for project ${projectId}`);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(resourceData, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error(`[MCP] Failed to read resource ${uri}:`, error);
+      throw new Error(`Failed to read resource: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 

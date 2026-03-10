@@ -18,7 +18,7 @@ Get your token from: https://poeditor.com/account/api
 
 ```bash
 # Run the pre-built image directly (no need to clone this repo)
-docker run -d -p 9142:9142 \
+docker run -d -p 9142:9142 --restart always \
   -e POEDITOR_API_TOKEN=your_token_here \
   --name poeditor-mcp \
   gabrielepallaoro/poeditor-mcp-server:latest
@@ -38,7 +38,7 @@ cd poeditor-mcp-server
 docker build -t poeditor-mcp-server .
 
 # Run the container
-docker run -d -p 9142:9142 \
+docker run -d -p 9142:9142 --restart always \
   -e POEDITOR_API_TOKEN=your_token_here \
   --name poeditor-mcp \
   poeditor-mcp-server
@@ -55,7 +55,8 @@ Add to your MCP settings:
 {
   "mcpServers": {
     "poeditor": {
-      "url": "http://localhost:9142/sse"
+      "url": "http://localhost:9142/sse",
+      "type": "sse"
     }
   }
 }
